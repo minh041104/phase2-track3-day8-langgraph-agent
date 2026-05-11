@@ -6,7 +6,16 @@ input state in place.
 
 from __future__ import annotations
 
+import re
+
 from .state import AgentState, ApprovalDecision, Route, make_event
+
+_WORD_RE = re.compile(r"[a-z0-9']+")
+
+
+def _query_words(query: str) -> list[str]:
+    """Normalize a query into lowercase word tokens for routing."""
+    return _WORD_RE.findall(query.lower())
 
 
 def intake_node(state: AgentState) -> dict:
@@ -28,24 +37,44 @@ def classify_node(state: AgentState) -> dict:
     TODO(student): replace keyword heuristics with a clear routing policy.
     Required routes: simple, tool, missing_info, risky, error.
     """
-    query = state.get("query", "").lower()
-    words = query.split()
-    clean_words = [w.strip("?!.,;:") for w in words]
+    query = state.get("query", "")
+    clean_words = _query_words(query)
+    word_set = set(clean_words)
     route = Route.SIMPLE
     risk_level = "low"
-    if "refund" in query or "delete" in query or "send" in query:
+
+    risky_keywords = {"refund", "delete", "send", "cancel", "remove", "revoke"}
+    tool_keywords = {"status", "order", "lookup", "check", "track", "find", "search"}
+    vague_keywords = {"it", "this", "that", "thing", "issue", "problem"}
+    error_keywords = {"timeout", "fail", "failure", "error", "crash", "unavailable", "recover"}
+
+    matched_keywords: list[str] = []
+    if matched := sorted(word_set & risky_keywords):
         route = Route.RISKY
         risk_level = "high"
-    elif "status" in query or "order" in query or "lookup" in query:
+        matched_keywords = matched
+    elif matched := sorted(word_set & tool_keywords):
         route = Route.TOOL
-    elif len(clean_words) < 5 and "it" in clean_words:
+        matched_keywords = matched
+    elif len(clean_words) < 5 and word_set & vague_keywords:
         route = Route.MISSING_INFO
-    elif "timeout" in query or "fail" in query:
+        risk_level = "unknown"
+        matched_keywords = sorted(word_set & vague_keywords)
+    elif matched := sorted(word_set & error_keywords):
         route = Route.ERROR
+        risk_level = "medium"
+        matched_keywords = matched
     return {
         "route": route.value,
         "risk_level": risk_level,
-        "events": [make_event("classify", "completed", f"route={route.value}")],
+        "events": [
+            make_event(
+                "classify",
+                "completed",
+                f"route={route.value}",
+                matched_keywords=matched_keywords,
+            )
+        ],
     }
 
 
@@ -70,7 +99,10 @@ def tool_node(state: AgentState) -> dict:
     """
     attempt = int(state.get("attempt", 0))
     if state.get("route") == Route.ERROR.value and attempt < 2:
-        result = f"ERROR: transient failure attempt={attempt} scenario={state.get('scenario_id', 'unknown')}"
+        result = (
+            f"ERROR: transient failure attempt={attempt} "
+            f"scenario={state.get('scenario_id', 'unknown')}"
+        )
     else:
         result = f"mock-tool-result for scenario={state.get('scenario_id', 'unknown')}"
     return {
@@ -138,10 +170,12 @@ def answer_node(state: AgentState) -> dict:
 
     TODO(student): ground the answer in tool_results and approval where relevant.
     """
-    if state.get("tool_results"):
+    if state.get("tool_results") and state.get("approval"):
+        answer = f"Approved action completed. Evidence: {state['tool_results'][-1]}"
+    elif state.get("tool_results"):
         answer = f"I found: {state['tool_results'][-1]}"
     else:
-        answer = "This is a safe mock answer. Replace with your agent response."
+        answer = "This is a safe mock answer for the support request."
     return {
         "final_answer": answer,
         "events": [make_event("answer", "completed", "answer generated")],
@@ -158,7 +192,9 @@ def evaluate_node(state: AgentState) -> dict:
     if "ERROR" in latest:
         return {
             "evaluation_result": "needs_retry",
-            "events": [make_event("evaluate", "completed", "tool result indicates failure, retry needed")],
+            "events": [
+                make_event("evaluate", "completed", "tool result indicates failure, retry needed")
+            ],
         }
     return {
         "evaluation_result": "success",
@@ -173,8 +209,17 @@ def dead_letter_node(state: AgentState) -> dict:
     TODO(student): persist to dead-letter queue, alert on-call, or create support ticket.
     """
     return {
-        "final_answer": "Request could not be completed after maximum retry attempts. Logged for manual review.",
-        "events": [make_event("dead_letter", "completed", f"max retries exceeded, attempt={state.get('attempt', 0)}")],
+        "final_answer": (
+            "Request could not be completed after maximum retry attempts. "
+            "Logged for manual review."
+        ),
+        "events": [
+            make_event(
+                "dead_letter",
+                "completed",
+                f"max retries exceeded, attempt={state.get('attempt', 0)}",
+            )
+        ],
     }
 
 

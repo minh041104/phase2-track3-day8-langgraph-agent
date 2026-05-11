@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any
+import sqlite3
 
 
-def build_checkpointer(kind: str = "memory", database_url: str | None = None) -> Any | None:
+def _sqlite_database_path(database_url: str | None) -> str:
+    """Accept plain paths and sqlite:// URLs for local lab configuration."""
+    if not database_url:
+        return "checkpoints.db"
+    if database_url.startswith("sqlite:///"):
+        return database_url.removeprefix("sqlite:///")
+    if database_url.startswith("sqlite://"):
+        return database_url.removeprefix("sqlite://")
+    return database_url
+
+
+def build_checkpointer(kind: str = "memory", database_url: str | None = None) -> object | None:
     """Return a LangGraph checkpointer.
 
     TODO(student): add SQLite/Postgres support for the extension track.
@@ -21,12 +32,18 @@ def build_checkpointer(kind: str = "memory", database_url: str | None = None) ->
         try:
             from langgraph.checkpoint.sqlite import SqliteSaver
         except ImportError as exc:
-            raise RuntimeError("SQLite checkpointer requires: pip install langgraph-checkpoint-sqlite") from exc
-        return SqliteSaver.from_conn_string(database_url or "checkpoints.db")
+            raise RuntimeError(
+                "SQLite checkpointer requires: pip install langgraph-checkpoint-sqlite"
+            ) from exc
+        conn = sqlite3.connect(_sqlite_database_path(database_url), check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return SqliteSaver(conn=conn)
     if kind == "postgres":
         try:
             from langgraph.checkpoint.postgres import PostgresSaver
         except ImportError as exc:
-            raise RuntimeError("Postgres checkpointer requires: pip install langgraph-checkpoint-postgres") from exc
+            raise RuntimeError(
+                "Postgres checkpointer requires: pip install langgraph-checkpoint-postgres"
+            ) from exc
         return PostgresSaver.from_conn_string(database_url or "")
     raise ValueError(f"Unknown checkpointer kind: {kind}")
