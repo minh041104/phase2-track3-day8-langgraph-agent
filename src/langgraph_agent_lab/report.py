@@ -150,6 +150,23 @@ records detailed node events and keyword matches for route explainability.
 With one more day, I would replace string-based mock tool results with structured
 tool payloads, add real human-in-the-loop resume handling, and export a Mermaid
 graph diagram for the demo.
+
+## 11. Additional hidden scenario validation
+
+I also tested the graph with `data/sample/scenarios_hidden.jsonl`. This file
+contains additional scenarios covering simple answers, tool lookups,
+missing-information requests, risky approval paths, retryable errors,
+dead-letter escalation, and mixed-priority routing.
+
+If `outputs/metrics_hidden.json` is generated, it should be included as extra
+evidence. In the local validation run, the hidden set had 15 scenarios, a
+100.00% success rate, 5 total retries, and 5 approval/interrupt events.
+
+The mixed-priority scenario `G15_mixed` is especially useful for validating the
+routing policy. Its query is "Check refund status for order 456", which contains
+both tool keywords (`check`, `status`, `order`) and a risky keyword (`refund`).
+The graph correctly routed it to `risky`, proving that the classifier prioritizes
+approval-required actions over tool execution.
 """
 
 

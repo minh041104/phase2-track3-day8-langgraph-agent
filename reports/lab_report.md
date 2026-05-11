@@ -3,7 +3,7 @@
 ## 1. Team / student
 
 - Name: Nguyen Binh Minh - 2A202600137
-- Repo/commit: phase2-track3-day8-langgraph-agent @ 4258100
+- Repo/commit: phase2-track3-day8-langgraph-agent
 - Date: 2026-05-11
 
 ## 2. Architecture
@@ -200,3 +200,24 @@ If given one more day, I would productionize the following areas first:
 4. Export a Mermaid graph diagram and include it in the final demo.
 5. Add more hidden-style tests for keyword conflicts, approval rejection, and
    max-retry edge cases.
+
+## 11. Additional hidden scenario validation
+
+I also tested the graph with `data/sample/scenarios_hidden.jsonl`. This file
+contains 15 additional scenarios covering simple answers, tool lookups,
+missing-information requests, risky approval paths, retryable errors,
+dead-letter escalation, and mixed-priority routing.
+
+Results from `outputs/metrics_hidden.json`:
+
+- Total hidden scenarios: 15
+- Success rate: 100.00%
+- Average nodes visited: 6.60
+- Total retries: 5
+- Total approval/interrupt events: 5
+
+The mixed-priority scenario `G15_mixed` is especially useful for validating the
+routing policy. Its query is "Check refund status for order 456", which contains
+both tool keywords (`check`, `status`, `order`) and a risky keyword (`refund`).
+The graph correctly routed it to `risky`, proving that the classifier prioritizes
+approval-required actions over tool execution.
